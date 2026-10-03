@@ -24,12 +24,7 @@ st.write(
     "will classify it using the Flask API."
 )
 
-
-st.sidebar.header("Application Information")
-
-st.sidebar.write(
-    f"API URL: {API_URL}"
-)
+st.info(f"Backend API: {API_URL}")
 
 uploaded_file = st.file_uploader(
     "Upload an image",
