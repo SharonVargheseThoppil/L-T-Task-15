@@ -57,7 +57,7 @@ if uploaded_file is not None:
                 response = requests.post(
                     f"{API_URL}/predict",
                     files=files,
-                    timeout=30
+                    timeout=180
                 )
 
             if response.status_code == 200:
@@ -134,7 +134,7 @@ if st.button("Check API Health"):
 
         response = requests.get(
             f"{API_URL}/health",
-            timeout=10
+            timeout=60
         )
 
         if response.status_code == 200:
