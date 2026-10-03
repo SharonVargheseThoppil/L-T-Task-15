@@ -1,0 +1,9 @@
+venv/
+training_venv/
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.vscode/
+.env
+.DS_Store
+*.keras
