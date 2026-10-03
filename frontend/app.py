@@ -1,160 +1,160 @@
 import os
 
-import requests
-import streamlit as st
+import numpy as np
+from PIL import Image
+from flask import Flask, jsonify, request
+from tensorflow.keras.models import load_model
 
 
-st.set_page_config(
-    page_title="CIFAR-10 Deep Learning",
-    page_icon="🤖",
-    layout="centered"
+app = Flask(__name__)
+
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+MODEL_PATH = os.environ.get(
+    "MODEL_PATH",
+    os.path.join(BASE_DIR, "cifar10_cnn_model.keras")
+)
+APP_VERSION = os.environ.get(
+    "APP_VERSION",
+    "v2.0"
 )
 
 
-API_URL = os.environ.get(
-    "API_URL",
-    "http://127.0.0.1:5000"
-)
+CLASS_NAMES = [
+    "airplane",
+    "automobile",
+    "bird",
+    "cat",
+    "deer",
+    "dog",
+    "frog",
+    "horse",
+    "ship",
+    "truck"
+]
 
 
-st.title("🤖 CIFAR-10 Image Classification")
+print("Loading model...")
 
-st.write(
-    "Upload an image and the deep learning model "
-    "will classify it using the Flask API."
-)
+model = load_model(MODEL_PATH)
 
-st.info(f"Backend API: {API_URL}")
-
-uploaded_file = st.file_uploader(
-    "Upload an image",
-    type=["jpg", "jpeg", "png"]
-)
+print("Model loaded successfully.")
 
 
-if uploaded_file is not None:
+def preprocess_image(image):
 
-    st.image(
-        uploaded_file,
-        caption="Uploaded Image",
-        use_container_width=True
+    image = image.convert("RGB")
+    image = image.resize((32, 32))
+
+    image_array = np.array(image).astype("float32") / 255.0
+
+    image_array = np.expand_dims(
+        image_array,
+        axis=0
     )
 
-    if st.button("🔮 Predict"):
-
-        try:
-
-            files = {
-                "image": (
-                    uploaded_file.name,
-                    uploaded_file.getvalue(),
-                    uploaded_file.type
-                )
-            }
-
-            with st.spinner("Sending image to Flask API..."):
-
-                response = requests.post(
-                    f"{API_URL}/predict",
-                    files=files,
-                    timeout=180
-                )
-
-            if response.status_code == 200:
-
-                result = response.json()
-
-                st.success("Prediction completed successfully.")
-
-                st.subheader(
-                    f"Prediction: {result['prediction']}"
-                )
-
-                st.metric(
-                    "Confidence",
-                    f"{result['confidence_percentage']}%"
-                )
-
-                st.write(
-                    f"API Version: {result['version']}"
-                )
-
-                st.subheader("Class Probabilities")
-
-                probabilities = result.get(
-                    "probabilities",
-                    {}
-                )
-
-                st.bar_chart(probabilities)
-
-            else:
-
-                try:
-                    error_data = response.json()
-                    st.error(
-                        error_data.get(
-                            "message",
-                            "Prediction request failed."
-                        )
-                    )
-
-                except Exception:
-                    st.error(
-                        f"API returned status code "
-                        f"{response.status_code}"
-                    )
-
-        except requests.exceptions.Timeout:
-
-            st.error(
-                "The Flask API request timed out."
-            )
-
-        except requests.exceptions.ConnectionError:
-
-            st.error(
-                "Unable to connect to the Flask API."
-            )
-
-        except Exception as error:
-
-            st.error(
-                f"Unexpected error: {error}"
-            )
+    return image_array
 
 
-st.divider()
+@app.route("/", methods=["GET"])
+def home():
 
-st.subheader("API Health")
+    return jsonify({
+        "application": "CIFAR-10 Deep Learning API",
+        "version": APP_VERSION,
+        "status": "running",
+        "endpoints": [
+            "/",
+            "/health",
+            "/predict"
+        ]
+    })
 
-if st.button("Check API Health"):
+
+@app.route("/health", methods=["GET"])
+def health():
+
+    return jsonify({
+        "status": "healthy",
+        "version": APP_VERSION
+    })
+
+
+@app.route("/predict", methods=["POST"])
+def predict():
+
+    if "image" not in request.files:
+        return jsonify({
+            "error": "No image provided",
+            "message": "Upload an image using the 'image' field"
+        }), 400
+
+    file = request.files["image"]
+
+    if file.filename == "":
+        return jsonify({
+            "error": "Empty filename",
+            "message": "Please select an image file"
+        }), 400
 
     try:
 
-        response = requests.get(
-            f"{API_URL}/health",
-            timeout=60
+        image = Image.open(file.stream)
+
+        processed_image = preprocess_image(image)
+
+        predictions = model.predict(
+            processed_image,
+            verbose=0
         )
 
-        if response.status_code == 200:
+        predicted_index = int(
+            np.argmax(predictions[0])
+        )
 
-            data = response.json()
+        predicted_class = CLASS_NAMES[
+            predicted_index
+        ]
 
-            st.success(
-                f"API is healthy — Version: "
-                f"{data.get('version', 'unknown')}"
-            )
+        confidence = float(
+            predictions[0][predicted_index]
+        )
 
-        else:
+        probabilities = {
+            CLASS_NAMES[i]: float(predictions[0][i])
+            for i in range(len(CLASS_NAMES))
+        }
 
-            st.error(
-                f"API returned status "
-                f"{response.status_code}"
-            )
+        return jsonify({
+            "success": True,
+            "prediction": predicted_class,
+            "confidence": round(confidence, 4),
+            "confidence_percentage": round(
+                confidence * 100,
+                2
+            ),
+            "class_index": predicted_index,
+            "probabilities": probabilities,
+            "version": APP_VERSION
+        })
 
     except Exception as error:
 
-        st.error(
-            f"API unavailable: {error}"
-        )
+        return jsonify({
+            "success": False,
+            "error": "Prediction failed",
+            "message": str(error)
+        }), 500
+
+
+if __name__ == "__main__":
+
+    port = int(
+        os.environ.get("PORT", 5000)
+    )
+
+    app.run(
+        host="0.0.0.0",
+        port=port
+    )
