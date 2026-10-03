@@ -1,9 +1,9 @@
 import os
+import threading
 
 import numpy as np
 from PIL import Image
 from flask import Flask, jsonify, request
-from tensorflow.keras.models import load_model
 
 
 app = Flask(__name__)
@@ -35,11 +35,36 @@ CLASS_NAMES = [
 ]
 
 
-print("Loading model...")
+model = None
+model_error = None
+model_lock = threading.Lock()
 
-model = load_model(MODEL_PATH)
 
-print("Model loaded successfully.")
+def load_model_once():
+    global model, model_error
+
+    with model_lock:
+        if model is not None:
+            return model
+
+        try:
+            print("Loading model...")
+
+            from tensorflow.keras.models import load_model
+
+            model = load_model(MODEL_PATH)
+
+            print("Model loaded successfully.")
+
+        except Exception as error:
+            model_error = str(error)
+            print("Model failed to load:", model_error)
+
+        return model
+
+
+# Load in the background so the web server can open its port right away
+threading.Thread(target=load_model_once, daemon=True).start()
 
 
 def preprocess_image(image):
@@ -77,19 +102,19 @@ def health():
 
     return jsonify({
         "status": "healthy",
+        "model_loaded": model is not None,
         "version": APP_VERSION
     })
 
 
 @app.route("/predict", methods=["POST"])
 def predict():
+
     if "image" not in request.files:
         return jsonify({
-        "error": "No image provided",
-        "message": "Upload an image using the 'image' field"
-    }), 400
-
-file = request.files["image"]
+            "error": "No image provided",
+            "message": "Upload an image using the 'image' field"
+        }), 400
 
     file = request.files["image"]
 
@@ -99,13 +124,22 @@ file = request.files["image"]
             "message": "Please select an image file"
         }), 400
 
+    current_model = load_model_once()
+
+    if current_model is None:
+        return jsonify({
+            "success": False,
+            "error": "Model not ready",
+            "message": model_error or "Model is still loading, try again shortly"
+        }), 503
+
     try:
 
         image = Image.open(file.stream)
 
         processed_image = preprocess_image(image)
 
-        predictions = model.predict(
+        predictions = current_model.predict(
             processed_image,
             verbose=0
         )
