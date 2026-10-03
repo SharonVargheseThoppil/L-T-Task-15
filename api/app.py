@@ -9,11 +9,12 @@ from tensorflow.keras.models import load_model
 app = Flask(__name__)
 
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
 MODEL_PATH = os.environ.get(
     "MODEL_PATH",
-    "cifar10_cnn_model.keras"
+    os.path.join(BASE_DIR, "cifar10_cnn_model.keras")
 )
-
 APP_VERSION = os.environ.get(
     "APP_VERSION",
     "v2.0"
