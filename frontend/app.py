@@ -83,12 +83,13 @@ def health():
 
 @app.route("/predict", methods=["POST"])
 def predict():
-
     if "image" not in request.files:
         return jsonify({
-            "error": "No image provided",
-            "message": "Upload an image using the 'image' field"
-        }), 400
+        "error": "No image provided",
+        "message": "Upload an image using the 'image' field"
+    }), 400
+
+file = request.files["image"]
 
     file = request.files["image"]
 
